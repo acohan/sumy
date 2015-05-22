@@ -2,7 +2,8 @@
 
 from __future__ import absolute_import
 from __future__ import division, print_function, unicode_literals
-
+from pprint import pprint
+from numpy import linalg
 import math
 
 try:
@@ -19,8 +20,8 @@ class LexRankSummarizer(AbstractSummarizer):
     LexRank: Graph-based Centrality as Salience in Text Summarization
     Source: http://tangra.si.umich.edu/~radev/lexrank/lexrank.pdf
     """
-    threshold = 0.1
-    epsilon = 0.1
+    threshold = 0.01
+    epsilon = 0.05
     _stop_words = frozenset()
 
     @property
@@ -41,7 +42,6 @@ class LexRankSummarizer(AbstractSummarizer):
         matrix = self._create_matrix(sentences_words, self.threshold, tf_metrics, idf_metrics)
         scores = self.power_method(matrix, self.epsilon)
         ratings = dict(zip(document.sentences, scores))
-
         return self._get_best_sentences(document.sentences, sentences_count, ratings)
 
     def _ensure_dependecies_installed(self):
@@ -84,9 +84,9 @@ class LexRankSummarizer(AbstractSummarizer):
 
     def _create_matrix(self, sentences, threshold, tf_metrics, idf_metrics):
         """
-        Creates matrix of shape |sentences|×|sentences|.
+        Creates matrix of shape |sentences|Ã—|sentences|.
         """
-        # create matrix |sentences|×|sentences| filled with zeroes
+        # create matrix |sentences|Ã—|sentences| filled with zeroes
         sentences_count = len(sentences)
         matrix = numpy.zeros((sentences_count, sentences_count))
         degrees = numpy.zeros((sentences_count, ))
@@ -94,7 +94,6 @@ class LexRankSummarizer(AbstractSummarizer):
         for row, (sentence1, tf1) in enumerate(zip(sentences, tf_metrics)):
             for col, (sentence2, tf2) in enumerate(zip(sentences, tf_metrics)):
                 matrix[row, col] = self._compute_cosine(sentence1, sentence2, tf1, tf2, idf_metrics)
-
                 if matrix[row, col] > threshold:
                     matrix[row, col] = 1.0
                     degrees[row] += 1
@@ -107,7 +106,7 @@ class LexRankSummarizer(AbstractSummarizer):
                     degrees[row] = 1
 
                 matrix[row][col] = matrix[row][col] / degrees[row]
-
+        numpy.set_printoptions(linewidth=35, formatter={'float': '{: 0.3f}'.format})
         return matrix
 
     def _compute_cosine(self, sentence1, sentence2, tf1, tf2, idf_metrics):
@@ -125,19 +124,24 @@ class LexRankSummarizer(AbstractSummarizer):
         else:
             return 0.0
 
+    def maximalEigenvector(self,A):
+         """ using the eig function to compute eigenvectors """
+         n = A.shape[1]
+         w,v = linalg.eig(A)
+         return abs(numpy.real(v[:n,0])/linalg.norm(v[:n,0],1))
+
     def power_method(self, matrix, epsilon):
         transposed_matrix = matrix.T
         sentences_count = len(matrix)
         p_vector = [1.0 / sentences_count] * sentences_count
         lambda_val = 1.0
 
+        next_p = [0] * sentences_count
         while lambda_val > epsilon:
-            next_p = [0] * sentences_count
             for i in range(sentences_count):
                 for j in range(sentences_count):
-                    next_p[i] += transposed_matrix[j, i] * p_vector[j]
-
-            lambda_val = sum((next_p[i] - p_vector[i])**2 for i in range(sentences_count))
+                    next_p[i] += transposed_matrix[i, j] * p_vector[j]
+            lambda_val = math.sqrt(sum((next_p[i] - p_vector[i])**2 for i in range(sentences_count)))
             p_vector = next_p
 
         return p_vector
